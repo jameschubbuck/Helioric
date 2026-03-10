@@ -1,6 +1,8 @@
 use crate::control::ControlWorker;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, MouseButton, MouseEventKind,
+    },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -47,6 +49,7 @@ fn run_app<B: ratatui::backend::Backend>(
     controls_mutex: Arc<Mutex<Vec<Arc<ControlWorker>>>>,
 ) -> io::Result<()> {
     let mut selected_idx = 0;
+    let mut dragging: Option<usize> = None;
     let labels: Vec<char> = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".chars().collect();
 
     loop {
@@ -127,8 +130,9 @@ fn run_app<B: ratatui::backend::Backend>(
         })?;
 
         if event::poll(Duration::from_millis(50))? {
-            if let Event::Key(key) = event::read()? {
-                match key.code {
+            let ev = event::read()?;
+            match ev {
+                Event::Key(key) => match key.code {
                     KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
                     KeyCode::Char('j') | KeyCode::Down => {
                         if !controls_snapshot.is_empty() {
@@ -179,7 +183,81 @@ fn run_app<B: ratatui::backend::Backend>(
                         }
                     }
                     _ => {}
+                },
+
+                Event::Mouse(me) => {
+                    // mirror the layout math from draw_bar to find which bar was clicked
+                    if !controls_snapshot.is_empty() {
+                        let size = terminal.size()?;
+
+                        let list_height = controls_snapshot.len() * 3;
+                        let start_y = std::cmp::max(
+                            4,
+                            (size.height as usize / 2).saturating_sub(list_height / 2),
+                        );
+
+                        let bar_width = 40usize;
+                        let bar_x = (size.width as usize / 2).saturating_sub(bar_width / 2);
+
+                        let col_to_percent = |col: u16| -> i32 {
+                            let col_i = col as i32;
+                            let rel = col_i - bar_x as i32;
+                            let rel = rel.clamp(0, bar_width as i32);
+                            let pct = (rel as f64 / bar_width as f64) * 100.0;
+                            let p = pct.round() as i32;
+                            // snap to nearest 5 to match ControlWorker behavior
+                            let snapped = ((p + 2) / 5) * 5;
+                            snapped.clamp(0, 100)
+                        };
+
+                        match me.kind {
+                            MouseEventKind::Down(MouseButton::Left) => {
+                                for (i, _ctrl) in controls_snapshot.iter().enumerate() {
+                                    let draw_y = (start_y + (i * 3)) as u16;
+                                    if draw_y < size.height - 2 {
+                                        if me.row == draw_y {
+                                            if (me.column as usize) >= bar_x
+                                                && (me.column as usize) < (bar_x + bar_width)
+                                            {
+                                                selected_idx = i;
+                                                dragging = Some(i);
+                                                let val = col_to_percent(me.column).clamp(0, 100);
+                                                controls_snapshot[i].set_target(val);
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            MouseEventKind::Drag(MouseButton::Left) => {
+                                if let Some(idx) = dragging {
+                                    if idx < controls_snapshot.len() {
+                                        let val = col_to_percent(me.column).clamp(0, 100);
+                                        controls_snapshot[idx].set_target(val);
+                                    }
+                                }
+                            }
+
+                            MouseEventKind::Up(MouseButton::Left) => {
+                                dragging = None;
+                            }
+
+                            MouseEventKind::Moved => {
+                                if let Some(idx) = dragging {
+                                    if idx < controls_snapshot.len() {
+                                        let val = col_to_percent(me.column).clamp(0, 100);
+                                        controls_snapshot[idx].set_target(val);
+                                    }
+                                }
+                            }
+
+                            _ => {}
+                        }
+                    }
                 }
+
+                _ => {}
             }
         }
     }
