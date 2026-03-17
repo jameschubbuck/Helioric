@@ -11,7 +11,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::Span,
-    widgets::{Block, Gauge, Paragraph},
+    widgets::{Block, BorderType, Gauge, Paragraph},
     Terminal,
 };
 use std::{
@@ -65,66 +65,93 @@ fn run_app<B: ratatui::backend::Backend>(
         terminal.draw(|f| {
             let size = f.size();
 
-            let block = Block::default();
-            f.render_widget(block, size);
+            let pad_top: u16 = 1;
+            let pad_bottom: u16 = 1;
 
-            if size.height < 10 || size.width < 40 {
+            let border_rect = Rect::new(
+                size.x,
+                size.y + pad_top,
+                size.width,
+                size.height.saturating_sub(pad_top + pad_bottom),
+            );
+
+            let block = Block::default()
+                .border_type(BorderType::Thick)
+                .border_style(Style::default().fg(Color::Cyan))
+                .borders(ratatui::widgets::Borders::ALL);
+            f.render_widget(&block, border_rect);
+
+            let inner = block.inner(border_rect);
+
+            if inner.height < 6 || inner.width < 40 {
                 let p = Paragraph::new("too small :(");
                 f.render_widget(p, size);
                 return;
             }
 
             let title_text = " H E L I O R I C ";
-            let title_y = 1;
-            let title_x = (size.width as usize).saturating_sub(title_text.len()) / 2;
+            let title_y = border_rect.y;
+            let inner_w = inner.width as usize;
+            let inner_x = inner.x as usize;
+            let title_x = inner_x + (inner_w.saturating_sub(title_text.len())) / 2;
 
             f.render_widget(
                 Paragraph::new(Span::styled(
                     title_text,
-                    Style::default().add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
                 )),
                 Rect::new(title_x as u16, title_y, title_text.len() as u16, 1),
             );
 
-            let line = "━".repeat(title_text.len());
-            f.render_widget(
-                Paragraph::new(Span::styled(
-                    line,
-                    Style::default().add_modifier(Modifier::BOLD),
-                )),
-                Rect::new(title_x as u16, title_y + 1, title_text.len() as u16, 1),
-            );
-
             if controls_snapshot.is_empty() {
                 let msg = "Scanning for monitors...";
-                let msg_x = (size.width as usize).saturating_sub(msg.len()) / 2;
+                let msg_x = inner_x + (inner_w.saturating_sub(msg.len())) / 2;
                 f.render_widget(
                     Paragraph::new(Span::styled(msg, Style::default().fg(Color::DarkGray))),
-                    Rect::new(msg_x as u16, size.height / 2, msg.len() as u16, 1),
+                    Rect::new(
+                        msg_x as u16,
+                        inner.y + inner.height / 2,
+                        msg.len() as u16,
+                        1,
+                    ),
                 );
             } else {
                 let list_height = controls_snapshot.len() * 3;
+                let inner_h = inner.height as usize;
+                let inner_y = inner.y as usize;
                 let start_y = std::cmp::max(
-                    4,
-                    (size.height as usize / 2).saturating_sub(list_height / 2),
-                );
+                    title_y as usize + 1,
+                    (inner_y + inner_h / 2).saturating_sub(list_height / 2),
+                ) as u16;
 
                 for (i, ctrl) in controls_snapshot.iter().enumerate() {
                     let active = i == selected_idx;
-                    let draw_y = (start_y + (i * 3)) as u16;
+                    let draw_y = start_y + (i * 3) as u16;
+                    let label = if controls_snapshot.len() == 1 {
+                        None
+                    } else {
+                        labels.get(i).copied()
+                    };
 
-                    if draw_y < size.height - 2 {
-                        draw_bar(f, draw_y, size.width, ctrl, active, labels.get(i).copied());
+                    if draw_y < inner.y + inner.height - 2 {
+                        draw_bar(f, draw_y, inner.width, ctrl, active, label);
                     }
                 }
             }
 
-            let help_txt = "[ABC] select   [123] set   [esc] quit";
-            let help_x = (size.width as usize).saturating_sub(help_txt.len()) / 2;
-            if size.height > 2 {
+            let help_txt = " [ABC] select   [123] set   [esc] quit ";
+            let help_x = inner_x + (inner_w.saturating_sub(help_txt.len())) / 2;
+            if inner.height > 2 {
                 f.render_widget(
                     Paragraph::new(Span::styled(help_txt, Style::default().fg(Color::DarkGray))),
-                    Rect::new(help_x as u16, size.height - 2, help_txt.len() as u16, 1),
+                    Rect::new(
+                        help_x as u16,
+                        border_rect.y + border_rect.height - 1,
+                        help_txt.len() as u16,
+                        1,
+                    ),
                 );
             }
         })?;

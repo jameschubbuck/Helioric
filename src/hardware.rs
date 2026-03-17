@@ -14,10 +14,7 @@ pub fn detect_controls(workers_mutex: Arc<Mutex<Vec<Arc<ControlWorker>>>>) {
                 if entry.path().join("brightness").exists() {
                     if let Some(name) = entry.file_name().to_str() {
                         let b = Box::new(BrightnessctlBackend::new(name.to_string()));
-                        workers.push(Arc::new(ControlWorker::new(
-                            "Internal Backlight".to_string(),
-                            b,
-                        )));
+                        workers.push(Arc::new(ControlWorker::new("Integrated".to_string(), b)));
                     }
                 }
             }
