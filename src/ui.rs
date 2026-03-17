@@ -216,15 +216,15 @@ fn run_app<B: ratatui::backend::Backend>(
                                     let draw_y = (start_y + (i * 3)) as u16;
                                     if draw_y < size.height - 2 {
                                         if me.row == draw_y {
+                                            selected_idx = i;
                                             if (me.column as usize) >= bar_x
                                                 && (me.column as usize) < (bar_x + bar_width)
                                             {
-                                                selected_idx = i;
                                                 dragging = Some(i);
                                                 let val = col_to_percent(me.column).clamp(0, 100);
                                                 controls_snapshot[i].set_target(val);
-                                                break;
                                             }
+                                            break;
                                         }
                                     }
                                 }
